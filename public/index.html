@@ -1,0 +1,380 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DevChat Pro — Workspace Messaging</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #27272a; border-radius: 9999px; }
+    ::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
+  </style>
+</head>
+<body class="bg-[#09090b] text-zinc-100 h-screen flex flex-col antialiased selection:bg-emerald-500/30 selection:text-emerald-200">
+
+  <!-- Slim Enterprise Top Bar -->
+  <header class="h-11 bg-zinc-900/90 backdrop-blur-md border-b border-zinc-800/80 px-5 flex justify-between items-center text-xs shrink-0">
+    <div class="flex items-center gap-2.5 truncate">
+      <span class="px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-medium text-[11px]">Notice</span>
+      <span id="announcement-bar" class="text-zinc-300 truncate">Connecting to workspace...</span>
+    </div>
+    <div class="bg-zinc-950 border border-zinc-800 px-3 py-1 rounded-full flex items-center gap-2 shrink-0">
+      <span class="relative flex h-2 w-2">
+        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+        <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+      </span>
+      <span class="text-zinc-400">Online:</span>
+      <span id="active-count" class="font-semibold text-zinc-100">0</span>
+    </div>
+  </header>
+
+  <!-- LOGIN SCREEN -->
+  <div id="login-screen" class="flex-1 flex items-center justify-center p-4 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900 via-[#09090b] to-[#09090b]">
+    <div class="bg-zinc-900/80 backdrop-blur-xl p-8 rounded-2xl shadow-2xl w-full max-w-md border border-zinc-800">
+      <div class="flex flex-col items-center mb-7">
+        <div class="w-11 h-11 rounded-xl bg-zinc-100 text-zinc-950 flex items-center justify-center font-bold text-lg mb-3 shadow-sm">
+          DC
+        </div>
+        <h2 class="text-xl font-semibold tracking-tight text-white">Sign in to DevChat Pro</h2>
+        <p class="text-zinc-400 text-xs mt-1">Secure real-time workspace & private rooms</p>
+      </div>
+
+      <!-- Real Google OAuth Route -->
+      <a href="/auth/google" class="w-full bg-white text-zinc-900 font-medium text-sm py-2.5 px-4 rounded-xl flex items-center justify-center gap-3 hover:bg-zinc-200 transition mb-5 shadow-sm">
+        <img src="https://www.svgrepo.com/show/475656/google-color.svg" class="w-4 h-4" alt="Google">
+        Continue with Google
+      </a>
+
+      <div class="relative flex py-2 items-center mb-5">
+        <div class="flex-grow border-t border-zinc-800"></div>
+        <span class="flex-shrink mx-3 text-zinc-500 text-[11px] uppercase tracking-wider font-medium">Or guest access</span>
+        <div class="flex-grow border-t border-zinc-800"></div>
+      </div>
+
+      <form onsubmit="handleEmailLogin(event)" class="space-y-4">
+        <div>
+          <label class="block text-xs font-medium text-zinc-400 mb-1.5">Display Name</label>
+          <input type="text" id="username-input" required placeholder="Abhinav Kumar" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-500 transition">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-zinc-400 mb-1.5">Email Address</label>
+          <input type="email" id="email-input" required placeholder="abhinav@gmail.com" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-500 transition">
+        </div>
+        <button type="submit" class="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border border-zinc-700 font-medium text-sm py-2.5 rounded-xl transition">
+          Enter Workspace
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- MAIN CHAT DASHBOARD -->
+  <div id="chat-screen" class="hidden flex-1 flex overflow-hidden">
+    
+    <!-- Left Sidebar -->
+    <aside class="w-80 bg-zinc-900/60 border-r border-zinc-800/80 p-4 flex flex-col justify-between overflow-y-auto shrink-0">
+      <div class="space-y-4">
+        
+        <!-- User Profile Card with No-Referrer & Fallback Fix -->
+        <div class="flex items-center justify-between bg-zinc-900 p-3 rounded-xl border border-zinc-800">
+          <div class="flex items-center gap-3 overflow-hidden">
+            <img id="user-avatar" referrerpolicy="no-referrer" src="https://ui-avatars.com/api/?name=User&background=27272a&color=fff" class="w-9 h-9 rounded-full object-cover ring-1 ring-zinc-700 shrink-0">
+            <div class="truncate">
+              <h3 id="display-user" class="font-semibold text-sm text-zinc-100 truncate">User</h3>
+              <p id="display-email" class="text-[11px] text-zinc-400 truncate">Guest</p>
+            </div>
+          </div>
+          <a href="/auth/logout" class="text-xs text-zinc-400 hover:text-rose-400 px-2 py-1 rounded-md hover:bg-zinc-800 transition font-medium">
+            Logout
+          </a>
+        </div>
+
+        <!-- Create / Join Personal Room -->
+        <div class="bg-zinc-900/90 p-4 rounded-xl border border-zinc-800/90">
+          <div class="flex items-center justify-between mb-2.5">
+            <h4 class="font-semibold text-xs uppercase tracking-wider text-zinc-400">Private Rooms</h4>
+            <span class="text-[10px] text-zinc-500">End-to-End</span>
+          </div>
+          <input type="text" id="room-input" placeholder="Enter room code..." class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 mb-2.5 focus:outline-none focus:border-emerald-500/70 transition">
+          <div class="flex gap-2">
+            <button onclick="joinPersonalRoom()" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold py-2 rounded-lg transition shadow-sm">
+              Join / Create
+            </button>
+            <button onclick="generateRandomRoom()" class="bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300 text-xs px-3 py-2 rounded-lg transition" title="Generate Random Room Code">
+              🎲
+            </button>
+          </div>
+        </div>
+
+        <!-- Active Members in Current Room -->
+        <div id="members-panel" class="hidden bg-zinc-900/90 p-4 rounded-xl border border-zinc-800/90">
+          <div class="flex justify-between items-center mb-3">
+            <h4 class="font-semibold text-xs uppercase tracking-wider text-zinc-400">Members (<span id="room-member-count">0</span>)</h4>
+            <button onclick="copyRoomCode()" id="copy-btn" class="text-[11px] text-emerald-400 hover:text-emerald-300 font-medium transition">
+              Copy Code
+            </button>
+          </div>
+          <ul id="members-list" class="space-y-1.5 max-h-40 overflow-y-auto text-sm"></ul>
+        </div>
+
+        <!-- Email Invite Box -->
+        <div id="invite-box" class="hidden bg-zinc-900/90 p-4 rounded-xl border border-zinc-800/90">
+          <h4 class="font-semibold text-xs uppercase tracking-wider text-zinc-400 mb-2.5">Invite Member</h4>
+          <input type="email" id="invite-email" placeholder="colleague@gmail.com" class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 mb-2.5 focus:outline-none focus:border-zinc-500 transition">
+          <button onclick="sendEmailInvite()" class="w-full bg-zinc-100 hover:bg-white text-zinc-950 text-xs font-semibold py-2 rounded-lg transition">
+            Send Email Invite
+          </button>
+          <p id="invite-status" class="text-[11px] text-zinc-400 mt-2"></p>
+        </div>
+      </div>
+
+      <!-- Bottom Workspace Status -->
+      <div class="pt-3 border-t border-zinc-800/80 flex items-center justify-between text-xs">
+        <span class="text-zinc-500">Channel</span>
+        <span id="chat-mode-badge" class="px-2.5 py-0.5 rounded-md bg-zinc-800 text-zinc-200 border border-zinc-700 font-medium text-[11px]">
+          Global Lobby
+        </span>
+      </div>
+    </aside>
+
+    <!-- Right Main Chat Area -->
+    <main class="flex-1 flex flex-col bg-[#09090b]">
+      <!-- Chat Header -->
+      <div class="h-16 px-6 border-b border-zinc-800/80 flex justify-between items-center bg-zinc-900/30 shrink-0">
+        <div>
+          <h3 id="room-title" class="font-semibold text-base text-zinc-100 flex items-center gap-2">
+            <span class="text-zinc-400">#</span> Global Lobby
+          </h3>
+          <p id="room-subtitle" class="text-xs text-zinc-500">Public workspace channel — visible to all connected members</p>
+        </div>
+        <button id="leave-room-btn" onclick="leaveRoom()" class="hidden bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-xs px-3.5 py-1.5 rounded-lg font-medium transition">
+          Leave Room
+        </button>
+      </div>
+
+      <!-- Messages Container -->
+      <div id="messages-box" class="flex-1 p-6 overflow-y-auto space-y-4"></div>
+
+      <!-- Live Typing Indicator -->
+      <div id="typing-indicator" class="px-6 py-1 text-xs text-emerald-400 font-medium h-6"></div>
+
+      <!-- Input Box -->
+      <form onsubmit="sendMessage(event)" class="p-4 bg-zinc-900/40 border-t border-zinc-800/80 flex gap-3">
+        <input type="text" id="msg-input" oninput="handleTyping()" placeholder="Write a message..." autocomplete="off" class="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-zinc-600 transition">
+        <button type="submit" class="bg-zinc-100 hover:bg-white text-zinc-950 px-5 py-2.5 rounded-xl text-sm font-semibold transition shadow-sm">
+          Send
+        </button>
+      </form>
+    </main>
+  </div>
+
+  <script>
+    const socket = io();
+    let currentUser = "";
+    let currentEmail = "";
+    let currentPhoto = "";
+    let currentRoom = null;
+    let typingTimeout = null;
+
+    window.addEventListener("DOMContentLoaded", async () => {
+      const res = await fetch("/api/me");
+      const data = await res.json();
+      if (data.authenticated && data.user) {
+        currentUser = data.user.name;
+        currentEmail = data.user.email;
+        currentPhoto = data.user.photo;
+        startApp();
+      }
+    });
+
+    socket.on("active", (count) => {
+      document.getElementById("active-count").innerText = count;
+    });
+
+    socket.on("announce", (msg) => {
+      document.getElementById("announcement-bar").innerText = msg;
+    });
+
+    socket.on("join", (msg) => {
+      if (!currentRoom) appendSystemMessage(msg);
+    });
+
+    socket.on("chat", (msg) => {
+      if (!currentRoom) {
+        appendMessage("Workspace", msg, false);
+      }
+    });
+
+    socket.on("room-notification", (msg) => {
+      appendSystemMessage(msg);
+    });
+
+    socket.on("receive-room-msg", (data) => {
+      const isMe = data.username === currentUser;
+      appendMessage(data.username, data.text, isMe, data.time, data.photo);
+    });
+
+    socket.on("room-members", (members) => {
+      document.getElementById("room-member-count").innerText = members.length;
+      const list = document.getElementById("members-list");
+      list.innerHTML = members
+        .map(
+          (m) => `
+        <li class="flex items-center justify-between bg-zinc-950/80 border border-zinc-800/80 px-3 py-1.5 rounded-lg">
+          <div class="flex items-center gap-2 truncate">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></span>
+            <span class="truncate text-xs text-zinc-200">${m.username}</span>
+          </div>
+          ${m.username === currentUser ? '<span class="text-[10px] text-zinc-500">You</span>' : ""}
+        </li>`
+        )
+        .join("");
+    });
+
+    socket.on("user-typing", ({ username, isTyping }) => {
+      const el = document.getElementById("typing-indicator");
+      el.innerText = isTyping ? `${username} is typing...` : "";
+    });
+
+    function handleEmailLogin(e) {
+      e.preventDefault();
+      currentUser = document.getElementById("username-input").value.trim();
+      currentEmail = document.getElementById("email-input").value.trim();
+      currentPhoto = `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser)}&background=27272a&color=fff`;
+      startApp();
+    }
+
+    function startApp() {
+      document.getElementById("login-screen").classList.add("hidden");
+      document.getElementById("chat-screen").classList.remove("hidden");
+      document.getElementById("display-user").innerText = currentUser;
+      document.getElementById("display-email").innerText = currentEmail || "Verified Account";
+
+      const avatarImg = document.getElementById("user-avatar");
+      const fallbackUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser)}&background=10b981&color=fff`;
+      avatarImg.onerror = () => { avatarImg.src = fallbackUrl; };
+      avatarImg.src = currentPhoto || fallbackUrl;
+
+      socket.emit("msg", `${currentUser} joined the workspace`);
+    }
+
+    function generateRandomRoom() {
+      const code = "ROOM-" + Math.floor(1000 + Math.random() * 9000);
+      document.getElementById("room-input").value = code;
+    }
+
+    function copyRoomCode() {
+      if (!currentRoom) return;
+      navigator.clipboard.writeText(currentRoom);
+      const btn = document.getElementById("copy-btn");
+      btn.innerText = "Copied!";
+      setTimeout(() => (btn.innerText = "Copy Code"), 1500);
+    }
+
+    function joinPersonalRoom() {
+      const roomName = document.getElementById("room-input").value.trim();
+      if (!roomName) return alert("Enter a room code or click 🎲 to generate one.");
+
+      currentRoom = roomName;
+      document.getElementById("messages-box").innerHTML = "";
+      document.getElementById("typing-indicator").innerText = "";
+      document.getElementById("room-title").innerHTML = `<span class="text-emerald-400">🔒</span> ${currentRoom}`;
+      document.getElementById("room-subtitle").innerText = "Private room — isolated real-time channel";
+      document.getElementById("chat-mode-badge").innerText = currentRoom;
+      document.getElementById("leave-room-btn").classList.remove("hidden");
+      document.getElementById("invite-box").classList.remove("hidden");
+      document.getElementById("members-panel").classList.remove("hidden");
+
+      socket.emit("join-room", { username: currentUser, room: currentRoom, photo: currentPhoto });
+    }
+
+    function leaveRoom() {
+      socket.emit("leave-room");
+      currentRoom = null;
+      document.getElementById("messages-box").innerHTML = "";
+      document.getElementById("typing-indicator").innerText = "";
+      document.getElementById("room-title").innerHTML = `<span class="text-zinc-400">#</span> Global Lobby`;
+      document.getElementById("room-subtitle").innerText = "Public workspace channel — visible to all connected members";
+      document.getElementById("chat-mode-badge").innerText = "Global Lobby";
+      document.getElementById("leave-room-btn").classList.add("hidden");
+      document.getElementById("invite-box").classList.add("hidden");
+      document.getElementById("members-panel").classList.add("hidden");
+    }
+
+    function handleTyping() {
+      socket.emit("typing", { room: currentRoom, username: currentUser, isTyping: true });
+      clearTimeout(typingTimeout);
+      typingTimeout = setTimeout(() => {
+        socket.emit("typing", { room: currentRoom, username: currentUser, isTyping: false });
+      }, 1200);
+    }
+
+    function sendMessage(e) {
+      e.preventDefault();
+      const input = document.getElementById("msg-input");
+      const text = input.value.trim();
+      if (!text) return;
+
+      socket.emit("typing", { room: currentRoom, username: currentUser, isTyping: false });
+
+      if (currentRoom) {
+        socket.emit("room-msg", { room: currentRoom, username: currentUser, text, photo: currentPhoto });
+      } else {
+        socket.emit("msg", `${currentUser}: ${text}`);
+      }
+      input.value = "";
+    }
+
+    function appendMessage(sender, text, isMe, time = "", photo = "") {
+      const box = document.getElementById("messages-box");
+      const div = document.createElement("div");
+      div.className = `flex flex-col ${isMe ? "items-end" : "items-start"}`;
+      div.innerHTML = `
+        <div class="flex items-center gap-2 mb-1 px-1">
+          <span class="text-[11px] font-medium text-zinc-400">${isMe ? "You" : sender}</span>
+          ${time ? `<span class="text-[10px] text-zinc-600">${time}</span>` : ""}
+        </div>
+        <div class="${
+          isMe
+            ? "bg-zinc-100 text-zinc-950 rounded-2xl rounded-br-sm font-medium"
+            : "bg-zinc-900 border border-zinc-800 text-zinc-100 rounded-2xl rounded-bl-sm"
+        } px-4 py-2.5 max-w-md text-sm leading-relaxed shadow-sm">
+          ${text}
+        </div>
+      `;
+      box.appendChild(div);
+      box.scrollTop = box.scrollHeight;
+    }
+
+    function appendSystemMessage(text) {
+      const box = document.getElementById("messages-box");
+      const div = document.createElement("div");
+      div.className = "flex justify-center my-2";
+      div.innerHTML = `<span class="text-[11px] text-zinc-500 bg-zinc-900/80 border border-zinc-800/80 px-3 py-1 rounded-full">${text}</span>`;
+      box.appendChild(div);
+      box.scrollTop = box.scrollHeight;
+    }
+
+    async function sendEmailInvite() {
+      const email = document.getElementById("invite-email").value;
+      const status = document.getElementById("invite-status");
+      if (!email) return;
+
+      status.innerText = "Sending invite...";
+      const res = await fetch("/api/send-invite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, roomCode: currentRoom, senderName: currentUser }),
+      });
+      const data = await res.json();
+      status.innerText = data.message;
+    }
+  </script>
+</body>
+</html>
